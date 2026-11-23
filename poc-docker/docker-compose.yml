@@ -1,0 +1,104 @@
+name: poc-metalsur
+
+# Parametros de escala compartidos por el gateway y el pipeline.
+x-escala: &escala
+  EQUIPOS: "50"            # 50 equipos x 8 sensores = 400 lecturas/s
+  SENSORES: "8"
+  VENTANA_SEG: "60"        # ventana de consolidacion (el TPO usa el dia; aca, 1 minuto)
+  UMBRAL_ANOMALIA: "95"
+
+# Plantilla de los filtros del pipeline: misma imagen, la variable ETAPA elige el filtro.
+x-filtro: &filtro
+  build: ./servicios
+  image: poc-metalsur/servicios
+  restart: unless-stopped
+  networks: [nube]
+  depends_on:
+    redis: { condition: service_healthy }
+    postgres: { condition: service_healthy }
+
+services:
+  redis:                   # broker: Redis Streams con grupos de consumidores
+    image: redis:7
+    container_name: redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
+    networks: [nube]
+
+  postgres:                # Repository analitico, base de Alarmas y consolidados
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_PASSWORD: poc
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      retries: 30
+    networks: [nube]
+
+  gateway:                 # gateway de borde de la planta
+    build: ./gateway
+    image: poc-metalsur/gateway
+    container_name: gateway
+    environment:
+      <<: *escala
+      MODO: ${MODO:-tobe}          # asis | tobe
+      TASA_VACIADO: "800"          # lecturas/s maximas al vaciar el acumulado
+      PROB_ACK_PERDIDO: "0.01"     # confirmaciones perdidas -> reenvios duplicados
+      PROB_CORRUPTO: "0.001"       # mensajes que no cumplen el contrato -> DLQ
+    volumes:
+      - gw-data:/data
+    depends_on:
+      redis: { condition: service_healthy }
+    networks: [nube]
+
+  validacion:
+    <<: *filtro
+    container_name: validacion
+    environment: { <<: *escala, ETAPA: validacion, CAPACIDAD: "1500" }
+
+  normalizacion:
+    <<: *filtro
+    container_name: normalizacion
+    environment: { <<: *escala, ETAPA: normalizacion, CAPACIDAD: "1500" }
+
+  deduplicacion:
+    <<: *filtro
+    container_name: deduplicacion
+    environment: { <<: *escala, ETAPA: deduplicacion, CAPACIDAD: "1500" }
+
+  deteccion:
+    <<: *filtro
+    container_name: deteccion
+    environment: { <<: *escala, ETAPA: deteccion, CAPACIDAD: "1500" }
+
+  persistencia:
+    <<: *filtro
+    container_name: persistencia
+    environment: { <<: *escala, ETAPA: persistencia, CAPACIDAD: "1500" }
+
+  consolidacion:           # batch de consolidados con marca de agua y versionado
+    <<: *filtro
+    container_name: consolidacion
+    environment: { <<: *escala, ETAPA: consolidacion, WATERMARK_SEG: "20" }
+
+  informe:                 # herramienta de verificacion: docker compose run --rm informe
+    build: ./servicios
+    image: poc-metalsur/servicios
+    profiles: [herramientas]
+    entrypoint: ["python", "-u", "informe.py"]
+    environment: { <<: *escala }
+    volumes:
+      - gw-data:/gateway:ro
+    networks: [nube]
+
+networks:
+  nube:
+    name: poc_nube
+
+volumes:
+  gw-data:
