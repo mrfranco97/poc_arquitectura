@@ -9,6 +9,10 @@
 # El informe queda en resultados/informe-<modo>.txt
 set -euo pipefail
 
+# Git Bash (Windows) convierte argumentos como /data/detener en rutas de Windows;
+# son rutas dentro de los contenedores, asi que se desactiva esa conversion.
+export MSYS_NO_PATHCONV=1
+
 MODO="${1:-}"
 if [[ "$MODO" != "asis" && "$MODO" != "tobe" ]]; then
   echo "uso: $0 asis|tobe" >&2

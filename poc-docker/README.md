@@ -70,6 +70,9 @@ se ajustan con `T_NORMAL`, `T_CORTE` y `T_POST`, por ejemplo
 
 ## Ejecución manual (para la defensa)
 
+En Git Bash (Windows), ejecutar antes `export MSYS_NO_PATHCONV=1` para que rutas como
+`/data/detener` no se conviertan en rutas de Windows.
+
 ```bash
 docker compose build
 MODO=tobe docker compose up -d
