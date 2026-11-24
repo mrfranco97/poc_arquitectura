@@ -4,7 +4,7 @@ name: poc-metalsur
 x-escala: &escala
   EQUIPOS: "50"            # 50 equipos x 8 sensores = 400 lecturas/s
   SENSORES: "8"
-  VENTANA_SEG: "60"        # ventana de consolidacion (el TPO usa el dia; aca, 1 minuto)
+  VENTANA_SEG: "30"        # ventana de consolidacion (el TPO usa el dia; aca, 30 s)
   UMBRAL_ANOMALIA: "95"
 
 # Plantilla de los filtros del pipeline: misma imagen, la variable ETAPA elige el filtro.
@@ -50,6 +50,7 @@ services:
       TASA_VACIADO: "800"          # lecturas/s maximas al vaciar el acumulado
       PROB_ACK_PERDIDO: "0.01"     # confirmaciones perdidas -> reenvios duplicados
       PROB_CORRUPTO: "0.001"       # mensajes que no cumplen el contrato -> DLQ
+      LOG_SEG: "2"                 # cada cuantos segundos informa su estado en el log
     volumes:
       - gw-data:/data
     depends_on:
@@ -84,7 +85,7 @@ services:
   consolidacion:           # batch de consolidados con marca de agua y versionado
     <<: *filtro
     container_name: consolidacion
-    environment: { <<: *escala, ETAPA: consolidacion, WATERMARK_SEG: "20" }
+    environment: { <<: *escala, ETAPA: consolidacion, WATERMARK_SEG: "10", QUIETUD_SEG: "8", CICLO_SEG: "2" }
 
   informe:                 # herramienta de verificacion: docker compose run --rm informe
     build: ./servicios

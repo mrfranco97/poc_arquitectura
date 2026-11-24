@@ -20,7 +20,7 @@ etapa de normalización que soporta **E6** (dos formatos de sensor conviviendo).
 | `deduplicacion` | Filtro 3 | Registro de claves de idempotencia con expiración de 7 días (equivale a DynamoDB con TTL) |
 | `deteccion` | Filtro 4 / servicio de Alarmas | Umbral sobre el valor; alarmas con más de 30 s de demora se marcan retrospectivas |
 | `persistencia` | Filtro 5 | Escribe en el Repository particionado por ventana de event time |
-| `consolidacion` | Batch de consolidados | Ventanas de 60 s con marca de agua de 20 s; recalcula como versión nueva al llegar datos tardíos y registra la corrección |
+| `consolidacion` | Batch de consolidados | Ventanas de 30 s con marca de agua de 10 s; recalcula como versión nueva al llegar datos tardíos y registra la corrección |
 | `postgres` | Repository, base de Alarmas, consolidados | PostgreSQL; la clave de idempotencia es la clave primaria |
 | `informe` | Herramienta de verificación | Compara lo generado por el gateway con lo persistido y evalúa E1, E2 y E4 |
 
@@ -54,7 +54,7 @@ poc-docker/
 
 ## Ejecución automatizada
 
-Requisitos: Docker con Docker Compose v2. Cada corrida dura unos seis minutos.
+Requisitos: Docker con Docker Compose v2. Cada corrida dura unos dos minutos y medio (más la construcción de las imágenes la primera vez).
 
 ```bash
 cd poc-docker
@@ -62,8 +62,8 @@ scripts/corrida.sh asis
 scripts/corrida.sh tobe
 ```
 
-El script limpia el entorno, lo levanta, espera 60 s de operación normal, corta la red
-del gateway 120 s, la restablece, espera 60 s, detiene la generación, espera a que el
+El script limpia el entorno, lo levanta, espera 20 s de operación normal, corta la red
+del gateway 60 s, la restablece, espera 35 s, detiene la generación, espera a que el
 sistema se estabilice y deja el informe en `resultados/informe-<modo>.txt`. Los tiempos
 se ajustan con `T_NORMAL`, `T_CORTE` y `T_POST`, por ejemplo
 `T_CORTE=300 scripts/corrida.sh tobe`.
@@ -77,9 +77,9 @@ En Git Bash (Windows), ejecutar antes `export MSYS_NO_PATHCONV=1` para que rutas
 docker compose build
 MODO=tobe docker compose up -d
 docker compose logs -f gateway consolidacion          # en otra terminal
-docker network disconnect poc_nube gateway            # tras un minuto: corte
-docker network connect poc_nube gateway               # dos minutos después: reconexión
-docker exec gateway touch /data/detener               # detiene la generación
+docker network disconnect poc_nube gateway            # a los 20 s: corte
+docker network connect poc_nube gateway               # un minuto después: reconexión
+docker exec gateway touch /data/detener               # a los 35 s: detiene la generación
 docker compose run --rm --no-deps informe --esperar   # espera a estabilizar e informa
 docker compose down -v                                # antes de la siguiente corrida
 ```
@@ -89,7 +89,9 @@ Qué observar:
 - **E1, continuidad.** En AS-IS, `perdidas` del gateway crece 400 por segundo durante el
   corte. En TO-BE se mantiene en cero y `en_buffer` crece 400 por segundo.
 - **E2, absorción del atraso.** Al reconectar, el gateway vacía el acumulado a 800
-  lecturas/s adicionales; el atraso de los filtros sube y vuelve a cero.
+  lecturas/s adicionales. Como la carga total (1.200) queda por debajo de `CAPACIDAD`
+  (1.500), el atraso se concentra en el gateway: el de los filtros sube como mucho a un lote (menos de
+  un segundo de trabajo) y vuelve a cero.
 - **E4, integridad.** `duplicados descartados` es mayor que cero por los reenvíos, y aun
   así lo persistido coincide exactamente con las lecturas válidas generadas. Las ventanas
   del corte se publican primero como parciales y luego se recalculan como versión 2, con
@@ -100,22 +102,22 @@ Qué observar:
 - `generadas` es la verdad del gateway: cuántas lecturas válidas generó por ventana. La
   columna `ok` indica si el consolidado vigente coincide con ella en cantidad y promedio.
 - La completitud de la primera y la última ventana es baja porque la corrida empieza y
-  termina a mitad de minuto. No es pérdida: esas ventanas coinciden con lo generado.
+  termina a mitad de ventana. No es pérdida: esas ventanas coinciden con lo generado.
 - La DLQ puede tener más entradas que mensajes corruptos: un corrupto cuya confirmación
   se perdió se reenvía y llega dos veces. El informe cuenta los mensajes distintos.
 
 ## Consultas útiles
 
-Lecturas por minuto (en AS-IS el hueco coincide con el corte):
+Lecturas por ventana (en AS-IS el hueco coincide con el corte):
 
 ```bash
-docker exec postgres psql -U postgres -c "SELECT to_timestamp(ventana*60) AS minuto, COUNT(*) FROM lecturas GROUP BY ventana ORDER BY ventana"
+docker exec postgres psql -U postgres -c "SELECT to_timestamp(ventana*30) AS inicio, COUNT(*) FROM lecturas GROUP BY ventana ORDER BY ventana"
 ```
 
 Historia de versiones de los consolidados y correcciones registradas:
 
 ```bash
-docker exec postgres psql -U postgres -c "SELECT to_timestamp(ventana*60) AS ventana, version, lecturas, round(completitud::numeric, 3) AS completitud, publicado FROM consolidados ORDER BY ventana, version"
+docker exec postgres psql -U postgres -c "SELECT to_timestamp(ventana*30) AS ventana, version, lecturas, round(completitud::numeric, 3) AS completitud, publicado FROM consolidados ORDER BY ventana, version"
 docker exec postgres psql -U postgres -c "SELECT * FROM correcciones"
 ```
 
@@ -136,7 +138,7 @@ docker exec postgres psql -U postgres -c "SELECT equipo, sensor, round(valor::nu
 - Escala reducida: 400 lecturas/s frente a las 2.880 nominales. `EQUIPOS`,
   `TASA_VACIADO` y `CAPACIDAD` permiten ajustarla; la relación entre las tasas reproduce
   el diseño (el vaciado limitado mantiene la carga por debajo de la capacidad).
-- El consolidado se calcula por ventana de 60 s en lugar de por día para que el
+- El consolidado se calcula por ventana de 30 s en lugar de por día para que el
   mecanismo de marca de agua, versionado y corrección sea observable en minutos.
 - Redis Streams reemplaza a Kinesis y PostgreSQL al Repository en S3/Athena y a
   DynamoDB; los tiempos de latencia no son representativos del entorno productivo en AWS.

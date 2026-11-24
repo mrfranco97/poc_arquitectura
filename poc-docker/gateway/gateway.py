@@ -35,7 +35,8 @@ PROB_ACK_PERDIDO = float(os.environ.get("PROB_ACK_PERDIDO", "0.01"))
 PROB_CORRUPTO = float(os.environ.get("PROB_CORRUPTO", "0.001"))
 PROB_ANOMALIA = float(os.environ.get("PROB_ANOMALIA", "0.0005"))
 UMBRAL = float(os.environ.get("UMBRAL_ANOMALIA", "95"))
-VENTANA_SEG = int(os.environ.get("VENTANA_SEG", "60"))
+VENTANA_SEG = int(os.environ.get("VENTANA_SEG", "30"))
+LOG_SEG = int(os.environ.get("LOG_SEG", "2"))
 DATA = "/data"
 
 if MODO not in ("asis", "tobe"):
@@ -205,7 +206,7 @@ if __name__ == "__main__":
     n = 0
     while True:
         guardar_estado()
-        if n % 5 == 0:
+        if n % LOG_SEG == 0:
             log(f"generadas={est['generadas']} perdidas={est['perdidas']} "
                 f"en_buffer={est['en_buffer']} enlace={'OK' if est['enlace_ok'] else 'CAIDO'}")
         n += 1

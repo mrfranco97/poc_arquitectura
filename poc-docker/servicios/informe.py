@@ -73,13 +73,13 @@ def esperar(cur, limite):
         if not motivos:
             return True
         print(f"esperando estabilizacion: {'; '.join(motivos)}", file=sys.stderr, flush=True)
-        time.sleep(10)
+        time.sleep(3)
     print("se agoto la espera; el informe refleja un estado intermedio", file=sys.stderr)
     return False
 
 
 def hora(ventana, seg):
-    return time.strftime("%H:%M", time.gmtime(ventana * seg))
+    return time.strftime("%H:%M:%S", time.gmtime(ventana * seg))
 
 
 def fila(etiqueta, valor, nota=""):
@@ -103,7 +103,7 @@ def main():
     est = leer_estado()
     m = r.hgetall("metricas")
     met = lambda k: int(m.get(k, 0))
-    seg = int(os.environ.get("VENTANA_SEG", "60"))
+    seg = int(os.environ.get("VENTANA_SEG", "30"))
     cur.execute("SELECT COUNT(*) FROM lecturas")
     persistidas = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*), COUNT(*) FILTER (WHERE retrospectiva) FROM alarmas")
@@ -150,14 +150,14 @@ def main():
     vigentes = {v[0]: v[1:] for v in cur.fetchall()}
     verdad = {int(k): v for k, v in est["verdad"].items()}
     errores = 0
-    print(f"  {'ventana':<8}{'version':>8}{'lecturas':>10}{'generadas':>11}{'complet.':>10}  ok")
+    print(f"  {'ventana':<10}{'version':>8}{'lecturas':>10}{'generadas':>11}{'complet.':>10}  ok")
     # se recorren las ventanas generadas: una ventana sin ningun dato tambien es un error
     for ventana in sorted(set(verdad) | set(vigentes)):
         gen_n, gen_suma = verdad.get(ventana, (0, 0.0))
         version, n, prom, comp = vigentes.get(ventana, ("-", 0, None, 0.0))
         ok = n == gen_n and gen_n > 0 and abs(prom - gen_suma / gen_n) < 1e-6
         errores += not ok
-        print(f"  {hora(ventana, seg):<8}{version:>8}{n:>10}{gen_n:>11}{comp:>10.1%}  "
+        print(f"  {hora(ventana, seg):<10}{version:>8}{n:>10}{gen_n:>11}{comp:>10.1%}  "
               f"{'si' if ok else 'NO'}")
 
     cur.execute("SELECT ventana, version_anterior, version_nueva, causa, registros_agregados,"

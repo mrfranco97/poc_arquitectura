@@ -26,9 +26,10 @@ ETAPA = os.environ["ETAPA"]
 CAPACIDAD = int(os.environ.get("CAPACIDAD", "1500"))
 EQUIPOS = int(os.environ.get("EQUIPOS", "50"))
 SENSORES = int(os.environ.get("SENSORES", "8"))
-VENTANA_SEG = int(os.environ.get("VENTANA_SEG", "60"))
-WATERMARK_SEG = int(os.environ.get("WATERMARK_SEG", "20"))
-QUIETUD_SEG = int(os.environ.get("QUIETUD_SEG", "15"))
+VENTANA_SEG = int(os.environ.get("VENTANA_SEG", "30"))
+WATERMARK_SEG = int(os.environ.get("WATERMARK_SEG", "10"))
+QUIETUD_SEG = int(os.environ.get("QUIETUD_SEG", "8"))
+CICLO_SEG = int(os.environ.get("CICLO_SEG", "2"))
 UMBRAL = float(os.environ.get("UMBRAL_ANOMALIA", "95"))
 LIMITE_ALERTA_SEG = 30                     # objetivo del enunciado: alertas en menos de 30 s
 TTL_IDEMPOTENCIA = 7 * 24 * 3600           # claves conservadas 7 dias (> 72 h de reenvio)
@@ -233,7 +234,7 @@ def persistir(pg):
 
 # ------------------------------------------------------------------ batch de consolidacion
 def consolidar(pg):
-    """Cada 5 s publica las ventanas cerradas (fin + marca de agua) y recalcula las que
+    """Cada CICLO_SEG publica las ventanas cerradas (fin + marca de agua) y recalcula las que
     recibieron datos tardios, como una version nueva y con la correccion registrada.
     Para no publicar una version por cada lote del vaciado, una ventana se recalcula
     cuando deja de recibir datos tardios durante QUIETUD_SEG."""
@@ -260,7 +261,7 @@ def consolidar(pg):
             cur.execute("INSERT INTO consolidados (ventana, version, lecturas, promedio,"
                         " completitud) VALUES (%s, %s, %s, %s, %s)",
                         (ventana, version, n, promedio, completitud))
-            hora = time.strftime("%H:%M", time.gmtime(ventana * VENTANA_SEG))
+            hora = time.strftime("%H:%M:%S", time.gmtime(ventana * VENTANA_SEG))
             if previo:
                 cur.execute("INSERT INTO correcciones (ventana, version_anterior, version_nueva,"
                             " causa, registros_agregados) VALUES (%s, %s, %s, %s, %s)",
@@ -270,7 +271,7 @@ def consolidar(pg):
             else:
                 estado = "completa" if completitud >= 0.99 else "PARCIAL"
                 log(f"ventana {hora} publicada v1 ({n} lecturas, {completitud:.1%}, {estado})")
-        time.sleep(5)
+        time.sleep(CICLO_SEG)
 
 
 if __name__ == "__main__":

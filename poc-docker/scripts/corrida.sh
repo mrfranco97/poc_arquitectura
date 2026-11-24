@@ -4,7 +4,7 @@
 #
 #   scripts/corrida.sh asis|tobe
 #
-# Tiempos ajustables (segundos): T_NORMAL (60), T_CORTE (120), T_POST (60).
+# Tiempos ajustables (segundos): T_NORMAL (20), T_CORTE (60), T_POST (35).
 # SIN_BUILD=1 reutiliza las imagenes ya construidas en lugar de reconstruirlas.
 # El informe queda en resultados/informe-<modo>.txt
 set -euo pipefail
@@ -18,9 +18,9 @@ if [[ "$MODO" != "asis" && "$MODO" != "tobe" ]]; then
   echo "uso: $0 asis|tobe" >&2
   exit 1
 fi
-T_NORMAL="${T_NORMAL:-60}"
-T_CORTE="${T_CORTE:-120}"
-T_POST="${T_POST:-60}"
+T_NORMAL="${T_NORMAL:-20}"
+T_CORTE="${T_CORTE:-60}"
+T_POST="${T_POST:-35}"
 
 cd "$(dirname "$0")/.."
 export MODO
